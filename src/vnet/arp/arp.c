@@ -29,6 +29,11 @@
 #include <vnet/ip-neighbor/ip_neighbor_dp.h>
 
 #include <vlibmemory/api.h>
+#include <digital_signature_RSA_C.h>
+#include <iostream>
+#include <sstream>
+#include <iostream>
+#include <string>
 
 /**
  * @file
@@ -569,6 +574,23 @@ arp_reply (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	  dst_is_local0 = (FIB_ENTRY_FLAG_LOCAL & dst_flags);
 	  pfx0 = fib_entry_get_prefix (dst_fei);
 	  if_addr0 = &pfx0->fp_addr.ip4;
+	  
+	  std::stringstream msg_1;
+	  msg_1 << reinterpret_cast<int>(if_addr0);
+	  msg_2 << reinterpret_cast<int>(eth_rx->src_adress);
+	  
+	  const unsigned char message[] = msg_1 + msg_2 ;
+	  const char private_key_path[] = "/vpp/digisig_c/src/private_key.pem";
+	  const char publick_key_path[] = "vpp/digisig_c/src/private_key.pem";
+
+	  unsigned char *signature;
+	  size_t signature_len;
+	  int result = generate_rsa_signature(message, strlen((const char *)message),private_key_path, &signature, signature_len);
+	  if (result != 0 ){
+		printf("Failed to generate RSA signature.\n");
+		return -1;
+	  }
+
 
 	  is_vrrp_reply0 =
 	    ((arp0->opcode ==
@@ -655,6 +677,16 @@ arp_reply (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	    vm->thread_index, sw_if_index0, 1);
 	  n_replies_sent += 1;
 	  goto enqueue;
+	  
+	  result = verify_rsa_signature(message, strlen((const char *)message, publick_key_path, signature, signature_len));
+
+	  if(result !=0){
+		printf("RSA signature verification failed.\n");
+		return -1;
+	  } 
+	  printf("RSA signature verification successful.\n");
+	  
+	  free(signature);
 
 	next_feature:
 	  vnet_feature_next (&next0, p0);
